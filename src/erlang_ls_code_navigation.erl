@@ -10,6 +10,9 @@
 %% API
 -export([ goto_definition/2 ]).
 
+%% TODO: Move function to server
+-export([ app_path/0, deps_path/0, include_path/0 ]).
+
 %%==============================================================================
 %% Includes
 %%==============================================================================
@@ -130,11 +133,12 @@ otp_path() ->
 -spec app_path() -> [string()].
 app_path() ->
   {ok, RootUri} = erlang_ls_buffer_server:get_root_uri(),
-  RootPath = erlang_ls_uri:path(RootUri),
+  RootPath = binary_to_list(erlang_ls_uri:path(RootUri)),
   [ filename:join([RootPath, "src"])
   , filename:join([RootPath, "include"])
   ].
 
+%% TODO: Do only once
 -spec deps_path() -> [string()].
 deps_path() ->
   {ok, RootUri} = erlang_ls_buffer_server:get_root_uri(),

@@ -140,6 +140,8 @@ handle_method(<<"initialize">>, Params) ->
   DepsDirs = maps:get("deps_dirs", Config, []),
   ok = erlang_ls_buffer_server:set_otp_path(OtpPath),
   ok = erlang_ls_buffer_server:set_deps_dirs(DepsDirs),
+  %% TODO: Create behaviour for providers (is_enabled, start, handle, stop).
+  erlang_ls_references:start(),
   Result = #{ capabilities =>
                 #{ hoverProvider => false
                  , completionProvider =>
@@ -148,6 +150,7 @@ handle_method(<<"initialize">>, Params) ->
                       }
                  , textDocumentSync => 1
                  , definitionProvider => true
+                 , referencesProvider => true
                  }
             },
   {response, Result};
@@ -202,6 +205,20 @@ handle_method(<<"textDocument/definition">>, Params) ->
                       , range => erlang_ls_protocol:range(Range)
                       }}
       end;
+    [] ->
+      {response, null}
+  end;
+handle_method(<<"textDocument/references">>, Params) ->
+  TextDocument = maps:get(<<"textDocument">> , Params),
+  Position     = maps:get(<<"position">>     , Params),
+  Line         = maps:get(<<"line">>         , Position),
+  Character    = maps:get(<<"character">>    , Position),
+  Uri          = maps:get(<<"uri">>          , TextDocument),
+  {ok, Buffer} = erlang_ls_buffer_server:get_buffer(Uri),
+  case erlang_ls_buffer:get_element_at_pos(Buffer, Line, Character) of
+    [POI|_] ->
+      {ok, References} = erlang_ls_references:find_references(Uri, POI),
+      {response, References};
     [] ->
       {response, null}
   end;
