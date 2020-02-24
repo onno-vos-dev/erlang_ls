@@ -37,15 +37,33 @@ did_close(_Params) -> ok.
 
 -spec generate_diagnostics(uri()) -> ok.
 generate_diagnostics(Uri) ->
+  CDiagnostics = sync_diagnostics(Uri),
+  async_diagnostics(Uri, CDiagnostics).
+
+-spec sync_diagnostics(uri()) -> [diagnostic()].
+sync_diagnostics(Uri) ->
   CDiagnostics = els_compiler_diagnostics:diagnostics(Uri),
-  DDiagnostics = els_dialyzer_diagnostics:diagnostics(Uri),
-  EDiagnostics = els_elvis_diagnostics:diagnostics(Uri),
   Method = <<"textDocument/publishDiagnostics">>,
-  Params1  = #{ uri => Uri
-              , diagnostics => CDiagnostics ++ DDiagnostics ++ EDiagnostics
+  Params  = #{ uri => Uri
+              , diagnostics => CDiagnostics
               },
   maybe_compile_and_load(Uri, CDiagnostics),
-  els_server:send_notification(Method, Params1).
+  els_server:send_notification(Method, Params),
+  CDiagnostics.
+
+-spec async_diagnostics(uri(), [diagnostic()]) -> ok.
+async_diagnostics(Uri, CDiagnostics) ->
+  spawn(fun() ->
+            DDiagnostics = els_dialyzer_diagnostics:diagnostics(Uri),
+            EDiagnostics = els_elvis_diagnostics:diagnostics(Uri),
+            Method = <<"textDocument/publishDiagnostics">>,
+            Params1  = #{ uri => Uri
+                        , diagnostics =>
+                            CDiagnostics ++ DDiagnostics ++ EDiagnostics
+                        },
+            els_server:send_notification(Method, Params1)
+        end),
+  ok.
 
 -spec maybe_compile_and_load(uri(), [diagnostic()]) -> ok.
 maybe_compile_and_load(Uri, [] = _CDiagnostics) ->
