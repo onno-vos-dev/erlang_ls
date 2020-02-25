@@ -29,7 +29,13 @@ diagnostics(Uri) ->
   case els_config:get(plt_path) of
     undefined -> [];
     DialyzerPltPath ->
-      WS = try dialyzer:run([ {files, [binary_to_list(Path)]}
+      {ok, Items} = els_dt_document:lookup(Uri),
+      Behaviours = lists:flatten(
+                     [els_dt_document:pois(P, [behaviour]) || P <- Items]),
+      BURIs = [element(2, els_utils:find_module(Id)) || #{id := Id} <-
+                                                          Behaviours],
+      BPaths = [ els_uri:path(BU) || BU <- BURIs ],
+      WS = try dialyzer:run([ {files, [binary_to_list(Path)] ++ BPaths}
                             , {from, src_code}
                             , {include_dirs, els_config:get(include_paths)}
                             , {plts, [DialyzerPltPath]}
