@@ -18,6 +18,7 @@
         , compiler_with_parse_transform_included/1
         , code_reload/1
         , code_reload_sticky_mod/1
+        , dialyzer/1
         , elvis/1
         ]).
 
@@ -57,11 +58,20 @@ end_per_suite(Config) ->
   els_test_utils:end_per_suite(Config).
 
 -spec init_per_testcase(atom(), config()) -> config().
-init_per_testcase(TestCase, Config) when TestCase =:= code_reload orelse
-                                         TestCase =:= code_reload_sticky_mod ->
+init_per_testcase(TestCase, Config0) when TestCase =:= code_reload orelse
+                                          TestCase =:= code_reload_sticky_mod ->
+  mock_notifications(),
+  Config = els_test_utils:init_per_testcase(TestCase, Config0),
   mock_rpc(),
-  mock_code_reload_enabled(),
-  els_test_utils:init_per_testcase(TestCase, Config);
+  OldCodeReloadCfg = els_config:get(code_reload),
+  els_config:set(code_reload, #{"node" => "fakenode"}),
+  [ {old_code_reload_cfg, OldCodeReloadCfg} | Config];
+init_per_testcase(TestCase, Config0) when TestCase =:= dialyzer ->
+  mock_notifications(),
+  Config = els_test_utils:init_per_testcase(TestCase, Config0),
+  meck:new(els_dialyzer_diagnostics, [passthrough, no_link]),
+  els_config:set(plt_path, [mocked]),
+  Config;
 init_per_testcase(TestCase, Config) ->
   mock_notifications(),
   els_test_utils:init_per_testcase(TestCase, Config).
@@ -69,8 +79,14 @@ init_per_testcase(TestCase, Config) ->
 -spec end_per_testcase(atom(), config()) -> ok.
 end_per_testcase(TestCase, Config) when TestCase =:= code_reload orelse
                                         TestCase =:= code_reload_sticky_mod ->
+  unmock_notifications(),
   unmock_rpc(),
-  unmock_code_reload_enabled(),
+  els_config:set(code_reload, ?config(old_code_reload_cfg, Config)),
+  els_test_utils:end_per_testcase(TestCase, Config);
+end_per_testcase(TestCase, Config) when TestCase =:= dialyzer ->
+  unmock_notifications(),
+  meck:unload([els_dialyzer_diagnostics]),
+  els_config:set(plt_path, undefined),
   els_test_utils:end_per_testcase(TestCase, Config);
 end_per_testcase(TestCase, Config) ->
   els_test_utils:end_per_testcase(TestCase, Config),
@@ -83,12 +99,17 @@ end_per_testcase(TestCase, Config) ->
 -spec compiler(config()) -> ok.
 compiler(Config) ->
   Uri = ?config(diagnostics_uri, Config),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
   ok = els_client:did_save(Uri),
-  {Method, Params} = wait_for_notification(),
+  {Method, Params} = wait_for_notification(els_compiler_diagnostics),
   ?assertEqual( <<"textDocument/publishDiagnostics">>
               , Method),
   ?assert(maps:is_key(uri, Params)),
   #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(1, Version),
   ?assert(maps:is_key(diagnostics, Params)),
   #{diagnostics := Diagnostics} = Params,
   ?assertEqual(4, length(Diagnostics)),
@@ -115,12 +136,17 @@ compiler(Config) ->
 -spec compiler_with_behaviour(config()) -> ok.
 compiler_with_behaviour(Config) ->
   Uri = ?config(diagnostics_beh_impl_uri, Config),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
   ok = els_client:did_save(Uri),
-  {Method, Params} = wait_for_notification(),
+  {Method, Params} = wait_for_notification(els_compiler_diagnostics),
   ?assertEqual( <<"textDocument/publishDiagnostics">>
               , Method),
   ?assert(maps:is_key(uri, Params)),
   #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(1, Version),
   ?assert(maps:is_key(diagnostics, Params)),
   #{diagnostics := Diagnostics} = Params,
   ?assertEqual(2, length(Diagnostics)),
@@ -138,12 +164,17 @@ compiler_with_behaviour(Config) ->
 -spec compiler_with_custom_macros(config()) -> ok.
 compiler_with_custom_macros(Config) ->
   Uri = ?config(diagnostics_macros_uri, Config),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
   ok = els_client:did_save(Uri),
-  {Method, Params} = wait_for_notification(),
+  {Method, Params} = wait_for_notification(els_compiler_diagnostics),
   ?assertEqual( <<"textDocument/publishDiagnostics">>
               , Method),
   ?assert(maps:is_key(uri, Params)),
   #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(1, Version),
   ?assert(maps:is_key(diagnostics, Params)),
   #{diagnostics := Diagnostics} = Params,
   ?assertEqual(1, length(Diagnostics)),
@@ -159,12 +190,17 @@ compiler_with_custom_macros(Config) ->
 -spec compiler_with_parse_transform(config()) -> ok.
 compiler_with_parse_transform(Config) ->
   Uri = ?config(diagnostics_parse_transform_usage_uri, Config),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
   ok = els_client:did_save(Uri),
-  {Method, Params} = wait_for_notification(),
+  {Method, Params} = wait_for_notification(els_compiler_diagnostics),
   ?assertEqual( <<"textDocument/publishDiagnostics">>
               , Method),
   ?assert(maps:is_key(uri, Params)),
   #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(1, Version),
   ?assert(maps:is_key(diagnostics, Params)),
   #{diagnostics := Diagnostics} = Params,
   ?assertEqual(1, length(Diagnostics)),
@@ -180,12 +216,17 @@ compiler_with_parse_transform(Config) ->
 -spec compiler_with_parse_transform_included(config()) -> ok.
 compiler_with_parse_transform_included(Config) ->
   Uri = ?config(diagnostics_parse_transform_included_uri, Config),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
   ok = els_client:did_save(Uri),
-  {Method, Params} = wait_for_notification(),
+  {Method, Params} = wait_for_notification(els_compiler_diagnostics),
   ?assertEqual( <<"textDocument/publishDiagnostics">>
               , Method),
   ?assert(maps:is_key(uri, Params)),
   #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(1, Version),
   ?assert(maps:is_key(diagnostics, Params)),
   #{diagnostics := Diagnostics} = Params,
   ?assertEqual(1, length(Diagnostics)),
@@ -203,40 +244,36 @@ elvis(Config) ->
   {ok, Cwd} = file:get_cwd(),
   RootPath = ?config(root_path, Config),
   try
-      file:set_cwd(RootPath),
-      Uri = ?config(elvis_diagnostics_uri, Config),
-      ok = els_client:did_save(Uri),
-      %% Only the compiler diagnostics are in this notification
-      {CMethod, CParams} = wait_for_notification(),
-      ?assertEqual( <<"textDocument/publishDiagnostics">>
-                  , CMethod),
-      ?assert(maps:is_key(diagnostics, CParams)),
-      #{diagnostics := CDiagnostics} = CParams,
-      ?assertEqual(0, length(CDiagnostics)),
-
-      %% Dialyzer and Elvis diagnostics are in this notification
-      {Method, Params} = wait_for_notification(),
-      ?assertEqual( <<"textDocument/publishDiagnostics">>
-                  , Method),
-      ?assert(maps:is_key(uri, Params)),
-      #{uri := Uri} = Params,
-      ?assert(maps:is_key(diagnostics, Params)),
-      #{diagnostics := Diagnostics} = Params,
-      ?assertEqual(2, length(Diagnostics)),
-      Warnings = [D || #{severity := ?DIAGNOSTIC_WARNING} = D <- Diagnostics],
-      Errors   = [D || #{severity := ?DIAGNOSTIC_ERROR}   = D <- Diagnostics],
-      ?assertEqual(2, length(Warnings)),
-      ?assertEqual(0, length(Errors)),
-      [ #{range := WarningRange1}
-      , #{range := WarningRange2} ] = Warnings,
-      ?assertEqual( #{'end' => #{character => 0, line => 6},
-                      start => #{character => 0, line => 5}}
-                  , WarningRange1
-                  ),
-      ?assertEqual( #{'end' => #{character => 0, line => 7},
-                      start => #{character => 0, line => 6}}
-                  , WarningRange2
-                  )
+    file:set_cwd(RootPath),
+    Uri = ?config(elvis_diagnostics_uri, Config),
+    {ok, Text} = file:read_file(els_uri:path(Uri)),
+    ok = els_client:did_open(Uri, erlang, 1, Text),
+    ok = els_client:did_save(Uri),
+    {Method, Params} = wait_for_notification(els_elvis_diagnostics),
+    ?assertEqual( <<"textDocument/publishDiagnostics">>
+                , Method),
+    ?assert(maps:is_key(uri, Params)),
+    #{uri := Uri} = Params,
+    ?assert(maps:is_key(version, Params)),
+    #{version := Version} = Params,
+    ?assertEqual(2, Version),
+    ?assert(maps:is_key(diagnostics, Params)),
+    #{diagnostics := Diagnostics} = Params,
+    ?assertEqual(2, length(Diagnostics)),
+    Warnings = [D || #{severity := ?DIAGNOSTIC_WARNING} = D <- Diagnostics],
+    Errors   = [D || #{severity := ?DIAGNOSTIC_ERROR}   = D <- Diagnostics],
+    ?assertEqual(2, length(Warnings)),
+    ?assertEqual(0, length(Errors)),
+    [ #{range := WarningRange1}
+    , #{range := WarningRange2} ] = Warnings,
+    ?assertEqual( #{'end' => #{character => 0, line => 6},
+                    start => #{character => 0, line => 5}}
+                , WarningRange1
+                ),
+    ?assertEqual( #{'end' => #{character => 0, line => 7},
+                    start => #{character => 0, line => 6}}
+                , WarningRange2
+                )
   catch _Err ->
       file:set_cwd(Cwd)
   end,
@@ -244,27 +281,76 @@ elvis(Config) ->
 
 -spec code_reload(config()) -> ok.
 code_reload(Config) ->
-  Uri = ?config(diagnostics_uri, Config),
+  Uri = ?config(diagnostics_no_errors_uri, Config),
   Module = els_uri:module(Uri),
-  ok = els_text_synchronization:maybe_compile_and_load(Uri, []),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
+  ok = els_client:did_save(Uri),
+  {_Method, _Params} = wait_for_notification(any),
   ?assert(meck:called(rpc, call, ['fakenode', c, c, [Module]])),
   ok.
 
 -spec code_reload_sticky_mod(config()) -> ok.
 code_reload_sticky_mod(Config) ->
-  Uri = ?config(diagnostics_uri, Config),
+  Uri = ?config(diagnostics_no_errors_uri, Config),
   Module = els_uri:module(Uri),
   meck:expect( rpc
              , call
-             , fun('fakenode', code, is_sticky, [_]) ->
+             , fun('fakenode', code, is_sticky, [Mod]) when Mod =:= Module ->
                    true;
                   (Node, Mod, Fun, Args) ->
                    meck:passthrough([Node, Mod, Fun, Args])
                end
              ),
-  ok = els_text_synchronization:maybe_compile_and_load(Uri, []),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
+  ok = els_client:did_save(Uri),
+  {_Method, _Params} = wait_for_notification(any),
   ?assert(meck:called(rpc, call, ['fakenode', code, is_sticky, [Module]])),
   ?assertNot(meck:called(rpc, call, ['fakenode', c, c, [Module]])),
+  ok.
+
+-spec dialyzer(config()) -> ok.
+dialyzer(Config) ->
+  Uri = ?config(diagnostics_dialyzer_uri, Config),
+  case find_dialyzer_plt() of
+    skip -> {skip, "No plt available. Please run `rebar3 dialyzer` first"};
+    Plt -> do_dialyzer(Uri, Plt)
+  end.
+
+do_dialyzer(Uri, Plt) ->
+  meck:expect(
+    els_dialyzer_diagnostics, run_dialyzer, 1,
+    fun(_) ->
+        Args = [ {files, [binary_to_list(els_uri:path(Uri))]}
+               , {from, src_code}
+               , {plts, [Plt]}
+               ],
+        meck:passthrough([Args])
+    end),
+  {ok, Text} = file:read_file(els_uri:path(Uri)),
+  ok = els_client:did_open(Uri, erlang, 1, Text),
+  ok = els_client:did_save(Uri),
+  {Method, Params} = wait_for_notification(els_dialyzer_diagnostics),
+  ?assertEqual( <<"textDocument/publishDiagnostics">>
+              , Method),
+  ?assert(maps:is_key(uri, Params)),
+  #{uri := Uri} = Params,
+  ?assert(maps:is_key(version, Params)),
+  #{version := Version} = Params,
+  ?assertEqual(3, Version),
+  ?assert(maps:is_key(diagnostics, Params)),
+  #{diagnostics := Diagnostics} = Params,
+  ?assertEqual(1, length(Diagnostics)),
+  Warnings = [D || #{severity := ?DIAGNOSTIC_WARNING} = D <- Diagnostics],
+  Errors   = [D || #{severity := ?DIAGNOSTIC_ERROR}   = D <- Diagnostics],
+  ?assertEqual(1, length(Warnings)),
+  ?assertEqual(0, length(Errors)),
+  WarningRanges = [ Range || #{range := Range} <- Warnings],
+  ExpectedWarningRanges = [ #{'end' => #{character => 0, line => 6},
+                              start => #{character => 0, line => 5}}
+                          ],
+  ?assertEqual(ExpectedWarningRanges, WarningRanges),
   ok.
 
 %%==============================================================================
@@ -284,10 +370,33 @@ mock_notifications() ->
 unmock_notifications() ->
   meck:unload(els_server).
 
-wait_for_notification() ->
+wait_for_notification(Type) ->
   receive
     {notification_sent, Method, Params} ->
-      {Method, Params}
+      filter_for_type(Type, Method, Params)
+  end.
+
+filter_for_type(Type, Method, Params) ->
+  case Type of
+    any -> {Method, Params};
+    _ ->
+      case filter_for_type(Type, Params) of
+        retry -> wait_for_notification(Type);
+        {ok, _} ->
+          {Method, Params}
+      end
+  end.
+
+filter_for_type(_Type, #{message := <<"code_reload", _/binary>>}) -> retry;
+filter_for_type(Type, Params) ->
+  Source = apply(Type, source, []),
+  Diagnostics = maps:get(diagnostics, Params, []),
+  Res = lists:filter(fun(Diagnostic) ->
+                         maps:get(source, Diagnostic) =:= Source
+                     end, Diagnostics),
+  case Res of
+    [] -> retry;
+    Res -> {ok, Params}
   end.
 
 mock_rpc() ->
@@ -304,16 +413,10 @@ mock_rpc() ->
 unmock_rpc() ->
   meck:unload(rpc).
 
-mock_code_reload_enabled() ->
-  meck:new(els_config, [passthrough, no_link]),
-  meck:expect( els_config
-             , get
-             , fun(code_reload) ->
-                   #{"node" => "fakenode"};
-                  (Key) ->
-                   meck:passthrough([Key])
-               end
-             ).
-
-unmock_code_reload_enabled() ->
-  meck:unload(els_config).
+find_dialyzer_plt() ->
+  BuildDir = filename:join(
+               [code:lib_dir(erlang_ls), "..", "..", "..", "default"]),
+  case filelib:wildcard("rebar3*plt", BuildDir) of
+    [] -> skip;
+    [Plt] -> filename:join([BuildDir, Plt])
+  end.
