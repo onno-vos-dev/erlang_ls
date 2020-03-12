@@ -70,35 +70,23 @@ init(Uri) ->
 
 -spec handle_call(any(), any(), state()) -> {reply, any(), state()}.
 handle_call(run_diagnostics, _From, #state{ uri = Uri
-                                          , diagnostics = Diagnostics
-                                          , version = Vsn} = S) ->
-  {NewDiagnostics, NewVsn} = run_diagnostics(Uri, Diagnostics, Vsn),
-  {reply, ok, S#state{ diagnostics = NewDiagnostics, version = NewVsn}};
-handle_call(DiagnosticsMod, _From, #state{ uri = Uri
-                                         , diagnostics = Diagnostics
-                                         , version = Vsn} = S) ->
-  Diagnostic = diagnostic(DiagnosticsMod, Uri),
-  NewDiagnostics = maps:update(DiagnosticsMod, Diagnostic, Diagnostics),
-  els_diagnostics_utils:send_notification(
-    Uri, lists:flatten(maps:values(NewDiagnostics)), Vsn + 1),
-  {reply, ok, S#state{ diagnostics = NewDiagnostics, version = Vsn + 1}};
+                                          , diagnostics = Diagnostics} = S) ->
+  {reply, ok, S#state{ diagnostics = run_diagnostics(Uri, Diagnostics)}};
 handle_call(UnknownMessage, _From, S) ->
   lager:info("Unknown handle_call! message: ~p", [UnknownMessage]),
   {reply, ok, S}.
 
 -spec handle_cast(any(), state()) -> {noreply, state()}.
 handle_cast(run_diagnostics, #state{ uri = Uri
-                                   , diagnostics = Diagnostics
-                                   , version = Vsn} = S) ->
-  {NewDiagnostics, NewVsn} = run_diagnostics(Uri, Diagnostics, Vsn),
-  {noreply, S#state{ diagnostics = NewDiagnostics, version = NewVsn}};
+                                   , diagnostics = Diagnostics} = S) ->
+  {noreply, S#state{ diagnostics = run_diagnostics(Uri, Diagnostics)}};
 handle_cast(UnknownMessage, S) ->
   lager:info("Unknown handle_cast! message: ~p", [UnknownMessage]),
   {noreply, S}.
 
 -spec handle_info(any(), state()) -> {noreply, state()}.
-handle_info({'EXIT', _, normal}, S) -> {noreply, S};
-handle_info({_, ok}, S) -> {noreply, S};
+handle_info({'EXIT', _, normal}, S) ->
+  {noreply, S};
 handle_info(UnknownMessage, S) ->
   lager:info("Unknown handle_info! message: ~p", [UnknownMessage]),
   {noreply, S}.
@@ -111,10 +99,6 @@ on_save(Uri) ->
   {ok, Pid} = els_diagnostics_sup:lookup_pid(Uri),
   ok = gen_server:call(Pid, run_diagnostics, infinity),
   ok.
-  %% ok = gen_server:call(Pid, els_compiler_diagnostics),
-  %% ok = gen_server:call(Pid, els_elvis_diagnostics),
-  %% ok = gen_server:call(Pid, els_dialyzer_diagnostics),
-  %% ok.
 
 -spec on_open(uri()) -> ok.
 on_open(Uri) ->
@@ -122,28 +106,27 @@ on_open(Uri) ->
   {ok, Pid} = els_diagnostics_sup:lookup_pid(Uri),
   ok = gen_server:cast(Pid, run_diagnostics),
   ok.
-  %% ok = gen_server:call(Pid, els_compiler_diagnostics),
-  %% ok = gen_server:call(Pid, els_elvis_diagnostics),
-  %% ok = gen_server:call(Pid, els_dialyzer_diagnostics),
-  %% ok.
 
 -spec on_close(uri()) -> ok.
 on_close(Uri) ->
   els_diagnostics_sup:stop_server(Uri).
 
--spec run_diagnostics(uri(), map(), integer()) -> {map(), integer()}.
-run_diagnostics(Uri, Diagnostics, Version) ->
+-spec run_diagnostics(uri(), map()) -> {map(), integer()}.
+run_diagnostics(Uri, Diagnostics) ->
   lists:foldl(
-    fun(DiagnosticsMod, {DiagnosticsAcc, Vsn}) ->
+    fun(DiagnosticsMod, DiagnosticsAcc) ->
         DResult = diagnostic(DiagnosticsMod, Uri),
         NewDiagnostics = maps:update(DiagnosticsMod, DResult, DiagnosticsAcc),
-        els_diagnostics_utils:send_notification(
-          Uri, lists:flatten(maps:values(NewDiagnostics)), Vsn + 1),
-        {NewDiagnostics, Vsn + 1}
-    end, {Diagnostics, Version}, [ els_compiler_diagnostics
-                                 , els_elvis_diagnostics
-                                 , els_dialyzer_diagnostics
-                                 ]).
+        els_diagnostics_utils:send_notification(Uri, merge(NewDiagnostics)),
+        NewDiagnostics
+    end, Diagnostics, [ els_compiler_diagnostics
+                      , els_elvis_diagnostics
+                      , els_dialyzer_diagnostics
+                      ]).
+
+-spec merge(map()) -> [diagnostic()].
+merge(Diagnostics) ->
+  lists:flatten(maps:values(Diagnostics)).
 
 -spec diagnostic(atom(), uri()) -> [diagnostic()].
 diagnostic(els_compiler_diagnostics, Uri) ->

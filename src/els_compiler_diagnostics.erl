@@ -64,7 +64,7 @@ source() ->
 compile(Uri) ->
   Dependencies = els_diagnostics_utils:dependencies(Uri),
   Path = binary_to_list(els_uri:path(Uri)),
-  case compile_file(Uri, Path, Dependencies) of
+  case compile_file(Path, Dependencies) of
     {ok, _, WS} ->
       diagnostics(Path, WS, ?DIAGNOSTIC_WARNING);
     {error, ES, WS} ->
@@ -208,11 +208,9 @@ string_to_term(Value) ->
       true
   end.
 
--spec compile_file(uri(), string(), [atom()]) ->
+-spec compile_file(string(), [atom()]) ->
         {ok | error, [compiler_msg()], [compiler_msg()]}.
-compile_file(Uri, Path, Dependencies) ->
-  {ok, Text} = file:read_file(Path),
-  ok = els_indexer:index(Uri, Text, 'deep'),
+compile_file(Path, Dependencies) ->
   %% Load dependencies required for the compilation
   Olds = [load_dependency(Dependency) || Dependency <- Dependencies],
   Opts = lists:append([ macro_options()

@@ -7,7 +7,7 @@
 %% Exports
 %%==============================================================================
 -export([ dependencies/1
-        , send_notification/3
+        , send_notification/2
         ]).
 %%==============================================================================
 %% Includes
@@ -44,11 +44,10 @@ included_uris([Id|Ids], Acc) ->
     {error, _Error} -> included_uris(Ids, Acc)
   end.
 
--spec send_notification(uri(), [diagnostic()], integer()) -> ok.
-send_notification(Uri, Diagnostics, Vsn) ->
+-spec send_notification(uri(), [diagnostic()]) -> ok.
+send_notification(Uri, Diagnostics) ->
   Method = <<"textDocument/publishDiagnostics">>,
   Params  = #{ uri         => Uri
-             , version     => Vsn
              , diagnostics => Diagnostics
              },
   els_server:send_notification(Method, Params).
