@@ -151,9 +151,11 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
         [R] ->
           {StartLine, _} = maps:get(id, R),
           RangeText = els_text:range(maps:get(text, Document), maps:get(id, R), {Line, Col}),
-          {ok,Ts,_} = erl_scan:string(binary_to_list(RangeText)),
-          {ok,F} = erl_parse:parse_form(Ts),
-          NewText = default_formatter:format(F, [0], #{break_indent => 2}),
+          {ok, FD, FileName} = write_to_tmp_file(RangeText),
+          {ok, [Form]} = els_dodger:parse(FD),
+          NewText = default_formatter:format(Form, [0], #{break_indent => 2}),
+          ok = file:close(FD),
+          ok = file:delete(FileName),
           {ok, [#{ range => #{ start => #{line => StartLine - 1, character => 0},
                                'end' => #{ line => Line - 1, character => Col}},
                    'newText' => list_to_binary(NewText)
@@ -163,3 +165,18 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
 ontypeformat_document(_Uri, _Document, _Line, _Col, _Char, _Options) ->
   {ok, []}.
 
+-spec write_to_tmp_file(any()) -> {ok, any(), any()}.
+write_to_tmp_file(Text) ->
+  {A, B, C} =
+    {erlang:unique_integer([positive]),
+     erlang:unique_integer([positive]),
+     erlang:unique_integer([positive])},
+  N = node(),
+  FileName =
+    filename:join("/tmp",
+                  lists:flatten(
+                    io_lib:format("~p-~p.~p.~p", [N, A, B, C]))),
+  {ok, FD} = file:open(FileName, [read, write]),
+  file:write(FD, Text),
+  file:position(FD, 0),
+  {ok, FD, FileName}.
