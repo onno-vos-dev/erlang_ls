@@ -151,11 +151,8 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
         [R] ->
           {StartLine, _} = maps:get(id, R),
           RangeText = els_text:range(maps:get(text, Document), maps:get(id, R), {Line, Col}),
-          {ok, FD, FileName} = write_to_tmp_file(RangeText),
-          {ok, [Form]} = els_dodger:parse(FD),
+          {ok, [Form]} = with_string_in_tmp_fd(RangeText, fun els_dodger:parse/1),
           NewText = default_formatter:format(Form, [0], #{break_indent => 2}),
-          ok = file:close(FD),
-          ok = file:delete(FileName),
           {ok, [#{ range => #{ start => #{line => StartLine - 1, character => 0},
                                'end' => #{ line => Line - 1, character => Col}},
                    'newText' => list_to_binary(NewText)
@@ -165,18 +162,21 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
 ontypeformat_document(_Uri, _Document, _Line, _Col, _Char, _Options) ->
   {ok, []}.
 
--spec write_to_tmp_file(any()) -> {ok, any(), any()}.
-write_to_tmp_file(Text) ->
-  {A, B, C} =
-    {erlang:unique_integer([positive]),
-     erlang:unique_integer([positive]),
-     erlang:unique_integer([positive])},
+-spec with_string_in_tmp_fd(any(), any()) -> {ok, any(), any()}.
+with_string_in_tmp_fd(Text, Fun) ->
+  Unique = erlang:unique_integer([positive]),
+  {A, B, C} = os:timestamp(),
   N = node(),
   FileName =
     filename:join("/tmp",
                   lists:flatten(
-                    io_lib:format("~p-~p.~p.~p", [N, A, B, C]))),
+                    io_lib:format("~p-~p.~p.~p.~p", [N, A, B, C, Unique]))),
   {ok, FD} = file:open(FileName, [read, write]),
-  file:write(FD, Text),
-  file:position(FD, 0),
-  {ok, FD, FileName}.
+  try
+    ok = file:write(FD, Text),
+    {ok, 0} = file:position(FD, 0),
+    Fun(FD)
+  after
+    ok = file:close(FD),
+    ok = file:delete(FileName)
+  end.
