@@ -38,13 +38,16 @@ is_enabled_document() -> true.
 
 -spec is_enabled_range() -> boolean().
 is_enabled_range() ->
-  false.
+  true.
 
 %% NOTE: because erlang_ls does not send incremental document changes
 %%       via `textDocument/didChange`, this kind of formatting does not
 %%       make sense.
 -spec is_enabled_on_type() -> document_ontypeformatting_options().
-is_enabled_on_type() -> false.
+is_enabled_on_type() ->
+  #{ <<"firstTriggerCharacter">> => <<",">>
+   , <<"moreTriggerCharacter">> => [<<".">>]
+   }.
 
 -spec handle_request(any(), state()) -> {any(), state()}.
 handle_request({document_formatting, Params}, State) ->
