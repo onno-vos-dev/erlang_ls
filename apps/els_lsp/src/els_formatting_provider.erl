@@ -38,13 +38,16 @@ is_enabled_document() -> true.
 
 -spec is_enabled_range() -> boolean().
 is_enabled_range() ->
-  false.
+  true.
 
 %% NOTE: because erlang_ls does not send incremental document changes
 %%       via `textDocument/didChange`, this kind of formatting does not
 %%       make sense.
 -spec is_enabled_on_type() -> document_ontypeformatting_options().
-is_enabled_on_type() -> false.
+is_enabled_on_type() ->
+  #{ <<"firstTriggerCharacter">> => <<".">>
+   , <<"moreTriggerCharacter">> => []
+   }.
 
 -spec handle_request(any(), state()) -> {any(), state()}.
 handle_request({document_formatting, Params}, State) ->
@@ -133,5 +136,69 @@ rangeformat_document(_Uri, _Document, _Range, _Options) ->
 -spec ontypeformat_document(binary(), map()
                            , number(), number(), string(), formatting_options())
                            -> {ok, [text_edit()]}.
-ontypeformat_document(_Uri, _Document, _Line, _Col, _Char, _Options) ->
-    {ok, []}.
+ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
+  case find_foldable_ranges(Document) of
+    [] ->
+      {ok, []};
+    FoldableRanges ->
+      case find_matching_range(FoldableRanges, Line) of
+        [] ->
+          {ok, []};
+        [MatchingRange] ->
+          {StartLine, _} = Id = els_dt_document:id(MatchingRange),
+          Text = els_dt_document:text(Document),
+          RangeText = els_text:range(Text, Id, {Line, Col}),
+          ParseF =
+            fun(Dir) ->
+               TmpFile = tmp_file(Dir),
+               ok = file:write_file(TmpFile, RangeText),
+               Opts = #{break_indent => 2, output_dir => current},
+               RebarState = #{},
+               T = rebar3_formatter:new(default_formatter, Opts, RebarState),
+               rebar3_formatter:format_file(TmpFile, T),
+               {ok, Bin} = file:read_file(TmpFile),
+               Bin
+            end,
+          %% rebar3_formatter adds a newline, since we terminate on . we
+          %% want to leave the cursor at the current char rather than jumping to a newline
+          NewText =
+            string:trim(
+              tempdir:mktmp(ParseF), trailing, "\n"),
+          {ok,
+           [#{range =>
+                #{start => #{line => StartLine - 1, character => 0},
+                  'end' => #{line => Line - 1, character => Col}},
+              newText => NewText}]}
+      end
+  end;
+ontypeformat_document(_Uri, _Document, _Line, _Col, Char, _Options) ->
+  ?LOG_INFO("Got unhandled character in ontypeformat_document. No formatter "
+            "configured for char: ~p",
+            [Char]),
+  {ok, []}.
+
+-spec find_foldable_ranges(els_dt_document:item()) -> [poi()].
+find_foldable_ranges(Document) ->
+  Pois = els_dt_document:pois(Document),
+  lists:filter(fun (#{kind := folding_range}) ->
+                     true;
+                   (_) ->
+                     false
+               end,
+               Pois).
+
+-spec find_matching_range([poi()], number()) -> [poi()].
+find_matching_range(FoldableRanges, Line) ->
+  lists:filter(fun(#{range := #{from := {FromLine, _}, to := {ToLine, _}}}) ->
+                  Line >= FromLine andalso Line =< ToLine
+               end,
+               FoldableRanges).
+
+-spec tmp_file(string()) -> any().
+tmp_file(Dir) ->
+  Unique = erlang:unique_integer([positive]),
+  {A, B, C} = os:timestamp(),
+  N = node(),
+  filename:join(Dir,
+                lists:flatten(
+                  io_lib:format("~p-~p.~p.~p.~p", [N, A, B, C, Unique]))).

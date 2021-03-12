@@ -21,10 +21,12 @@
         , lookup/1
         ]).
 
--export([ new/2
+-export([ get_element_at_pos/3
+        , id/1
+        , new/2
         , pois/1
         , pois/2
-        , get_element_at_pos/3
+        , text/1
         ]).
 
 %%==============================================================================
@@ -58,6 +60,7 @@
                  , md5  => binary()
                  , pois => [poi()]
                  }.
+
 -export_type([ id/0
              , item/0
              , kind/0
@@ -149,6 +152,14 @@ new(Uri, Text, Id, Kind) ->
 -spec pois(item()) -> [poi()].
 pois(#{ pois := POIs }) ->
   POIs.
+
+-spec text(item()) -> binary().
+text(#{text := Text}) ->
+  Text.
+
+-spec id(item()) -> id().
+id(#{id := Id}) ->
+  Id.
 
 %% @doc Returns the list of POIs of the given types for the current
 %%      document
