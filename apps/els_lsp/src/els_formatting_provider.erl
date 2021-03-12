@@ -45,8 +45,8 @@ is_enabled_range() ->
 %%       make sense.
 -spec is_enabled_on_type() -> document_ontypeformatting_options().
 is_enabled_on_type() ->
-  #{ <<"firstTriggerCharacter">> => <<",">>
-   , <<"moreTriggerCharacter">> => [<<".">>]
+  #{ <<"firstTriggerCharacter">> => <<".">>
+   , <<"moreTriggerCharacter">> => [<<"\t">>]
    }.
 
 -spec handle_request(any(), state()) -> {any(), state()}.
@@ -136,5 +136,30 @@ rangeformat_document(_Uri, _Document, _Range, _Options) ->
 -spec ontypeformat_document(binary(), map()
                            , number(), number(), string(), formatting_options())
                            -> {ok, [text_edit()]}.
+ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
+  %% _Range = #{ start => #{ line => Line, character => Col }, 'end' => #{ line => Line + 1, character => 0 }},
+  %% _NewText = <<"">>,
+  ?LOG_DEBUG("Uri: ~p~n _Document: ~p~n", [_Uri, Document]),
+  Pois = els_dt_document:pois(Document),
+  case lists:filter(fun(#{kind := folding_range}) -> true; (_) -> false end, Pois) of
+    [] -> {ok, []};
+    FRP ->
+      case lists:filter(fun(#{range := #{from := {FromLine, _}, to := {ToLine, _}}}) ->
+                     Line >= FromLine andalso Line =< ToLine
+                   end, FRP) of
+        [] -> {ok, []};
+        [R] ->
+          {StartLine, _} = maps:get(id, R),
+          RangeText = els_text:range(maps:get(text, Document), maps:get(id, R), {Line, Col}),
+          {ok,Ts,_} = erl_scan:string(binary_to_list(RangeText)),
+          {ok,F} = erl_parse:parse_form(Ts),
+          NewText = default_formatter:format(F, [0], #{break_indent => 2}),
+          {ok, [#{ range => #{ start => #{line => StartLine - 1, character => 0},
+                               'end' => #{ line => Line - 1, character => Col}},
+                   'newText' => list_to_binary(NewText)
+                 }]}
+      end
+  end;
 ontypeformat_document(_Uri, _Document, _Line, _Col, _Char, _Options) ->
-    {ok, []}.
+  {ok, []}.
+
