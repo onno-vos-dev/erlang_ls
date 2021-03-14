@@ -151,19 +151,32 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
         [R] ->
           {StartLine, _} = maps:get(id, R),
           RangeText = els_text:range(maps:get(text, Document), maps:get(id, R), {Line, Col}),
-          {ok, [Form]} = with_string_in_tmp_fd(RangeText, fun els_dodger:parse/1),
-          NewText = default_formatter:format(Form, [0], #{break_indent => 2}),
+          ParseF =
+            fun(FileName) ->
+              ok = file:write_file(FileName, RangeText),
+              Opts = #{break_indent => 2,
+                       output_dir => current},
+              %% sr_formatter and erlfmt_formatter don't work as they are not included in the build
+              %% sr_formatter is the only one using the rebar state,
+              %% I do not know what it is, making it an empty map for now.
+              RebarState = #{},
+              T = rebar3_formatter:new(default_formatter, Opts, RebarState),
+              rebar3_formatter:format_file(FileName, T),
+              {ok, Bin} = file:read_file(FileName),
+              Bin
+            end,
+          NewText = with_string_in_tmp_fd(ParseF),
           {ok, [#{ range => #{ start => #{line => StartLine - 1, character => 0},
                                'end' => #{ line => Line - 1, character => Col}},
-                   'newText' => list_to_binary(NewText)
+                   'newText' => NewText
                  }]}
       end
   end;
 ontypeformat_document(_Uri, _Document, _Line, _Col, _Char, _Options) ->
   {ok, []}.
 
--spec with_string_in_tmp_fd(any(), any()) -> {ok, any(), any()}.
-with_string_in_tmp_fd(Text, Fun) ->
+-spec with_string_in_tmp_fd(any()) -> any().
+with_string_in_tmp_fd(Fun) ->
   Unique = erlang:unique_integer([positive]),
   {A, B, C} = os:timestamp(),
   N = node(),
@@ -171,12 +184,8 @@ with_string_in_tmp_fd(Text, Fun) ->
     filename:join("/tmp",
                   lists:flatten(
                     io_lib:format("~p-~p.~p.~p.~p", [N, A, B, C, Unique]))),
-  {ok, FD} = file:open(FileName, [read, write]),
   try
-    ok = file:write(FD, Text),
-    {ok, 0} = file:position(FD, 0),
-    Fun(FD)
+    Fun(FileName)
   after
-    ok = file:close(FD),
     ok = file:delete(FileName)
   end.
