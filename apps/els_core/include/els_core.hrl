@@ -541,7 +541,7 @@
 
 -type document_ontypeformatting_options() :: false |
        #{ firstTriggerCharacter := string()
-        , moreTriggerCharacter  => string()
+        , moreTriggerCharacter  => [string()]
         }.
 
 %%------------------------------------------------------------------------------
