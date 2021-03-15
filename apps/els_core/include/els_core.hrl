@@ -540,8 +540,8 @@
                                }.
 
 -type document_ontypeformatting_options() :: false |
-       #{ first_trigger_character := string()
-        , more_trigger_character  => string()
+       #{ firstTriggerCharacter := string()
+        , moreTriggerCharacter  => string()
         }.
 
 %%------------------------------------------------------------------------------
