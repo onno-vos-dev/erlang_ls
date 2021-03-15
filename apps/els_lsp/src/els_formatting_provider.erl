@@ -159,8 +159,9 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
                {ok, Bin} = file:read_file(TmpFile),
                Bin
             end,
-          %% rebar3_formatter adds a newline, since we terminate on . we
-          %% want to leave the cursor at the current char rather than jumping to a newline
+          %% rebar3_formatter adds a newline, since we terminate on.
+          %% We want to leave the cursor at the current char rather
+          %% than jumping to a newline
           NewText =
             string:trim(
               tempdir:mktmp(ParseF), trailing, "\n"),
