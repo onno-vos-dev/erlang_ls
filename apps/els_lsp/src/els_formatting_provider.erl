@@ -45,8 +45,8 @@ is_enabled_range() ->
 %%       make sense.
 -spec is_enabled_on_type() -> document_ontypeformatting_options().
 is_enabled_on_type() ->
-  #{ <<"firstTriggerCharacter">> => <<".">>
-   , <<"moreTriggerCharacter">> => []
+  #{ firstTriggerCharacter => <<".">>
+   , moreTriggerCharacter => []
    }.
 
 -spec handle_request(any(), state()) -> {any(), state()}.

@@ -459,8 +459,8 @@ request_params({initialize, {RootUri, InitOptions}}) ->
                   , <<"hover">> =>
                     #{ <<"contentFormat">> => ContentFormat }
                   , <<"documentOnTypeFormattingProvider">> =>
-                      #{ <<"firstTriggerCharacter">> => <<",">>
-                       , <<"moreTriggercharacter">> => []
+                      #{ firstTriggerCharacter => <<",">>
+                       , moreTriggercharacter => []
                        }
                   },
   #{ <<"rootUri">> => RootUri
