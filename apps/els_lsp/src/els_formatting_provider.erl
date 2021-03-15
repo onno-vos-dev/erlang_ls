@@ -204,5 +204,6 @@ tmp_file(Dir) ->
                 lists:flatten(
                   io_lib:format("~p-~p.~p.~p.~p", [N, A, B, C, Unique]))).
 
+-spec id(#{}) -> any().
 id(#{id := Id}) ->
   Id.
