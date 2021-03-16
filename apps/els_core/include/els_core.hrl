@@ -604,7 +604,8 @@
                    | {atom(), atom()} %% record_def_field, record_field
                    | string() %% include, include_lib
                    | {atom(), arity()}
-                   | {module(), atom(), arity()}.
+                   | {module(), atom(), arity()}
+                   | pos().
 -type poi()       :: #{ kind  := poi_kind()
                       , id    := poi_id()
                       , data  := any()

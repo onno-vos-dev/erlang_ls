@@ -145,7 +145,7 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
         [] ->
           {ok, []};
         [MatchingRange] ->
-          {StartLine, _} = Id = id(MatchingRange),
+          {StartLine, _} = Id = els_poi:id(MatchingRange),
           Text = els_dt_document:text(Document),
           RangeText = els_text:range(Text, Id, {Line, Col}),
           ParseF =
@@ -203,7 +203,3 @@ tmp_file(Dir) ->
   filename:join(Dir,
                 lists:flatten(
                   io_lib:format("~p-~p.~p.~p.~p", [N, A, B, C, Unique]))).
-
--spec id(#{}) -> any().
-id(#{id := Id}) ->
-  Id.
