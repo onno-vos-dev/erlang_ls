@@ -45,9 +45,10 @@ is_enabled_range() ->
 %%       make sense.
 -spec is_enabled_on_type() -> document_ontypeformatting_options().
 is_enabled_on_type() ->
-  #{ firstTriggerCharacter => <<".">>
-   , moreTriggerCharacter => []
-   }.
+  case els_config:get(format_on_type) of
+    true -> #{firstTriggerCharacter => <<".">>, moreTriggerCharacter => []};
+    false -> false
+  end.
 
 -spec handle_request(any(), state()) -> {any(), state()}.
 handle_request({document_formatting, Params}, State) ->
@@ -159,7 +160,7 @@ ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
                {ok, Bin} = file:read_file(TmpFile),
                Bin
             end,
-          %% rebar3_formatter adds a newline, since we terminate on.
+          %% rebar3_formatter adds a newline, since we terminate on .
           %% We want to leave the cursor at the current char rather
           %% than jumping to a newline
           NewText =
