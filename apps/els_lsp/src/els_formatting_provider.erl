@@ -138,17 +138,18 @@ rangeformat_document(_Uri, _Document, _Range, _Options) ->
                            , number(), number(), string(), formatting_options())
                            -> {ok, [text_edit()]}.
 ontypeformat_document(_Uri, Document, Line, Col, <<".">>, _Options) ->
-  case find_foldable_ranges(Document) of
+  case find_matching_range(Document, Line) of
     [] ->
       {ok, []};
-    FoldableRanges ->
-      case find_matching_range(FoldableRanges, Line) of
-        [] ->
+    [MatchingRange] ->
+      {StartLine, _} = Id = els_poi:id(MatchingRange),
+      Text = els_dt_document:text(Document),
+      RangeText = els_text:range(Text, Id, {Line, Col}),
+      % Skip formatting if the . is on a commented line.
+      case string:trim(els_text:line(Text, Line - 1), both) of
+        <<"%", _/binary>> ->
           {ok, []};
-        [MatchingRange] ->
-          {StartLine, _} = Id = els_poi:id(MatchingRange),
-          Text = els_dt_document:text(Document),
-          RangeText = els_text:range(Text, Id, {Line, Col}),
+        _ ->
           ParseF =
             fun(Dir) ->
                TmpFile = tmp_file(Dir),
@@ -189,12 +190,12 @@ find_foldable_ranges(Document) ->
                end,
                Pois).
 
--spec find_matching_range([poi()], number()) -> [poi()].
-find_matching_range(FoldableRanges, Line) ->
+-spec find_matching_range(els_dt_document:item(), number()) -> [poi()].
+find_matching_range(Document, Line) ->
   lists:filter(fun(#{range := #{from := {FromLine, _}, to := {ToLine, _}}}) ->
                   Line >= FromLine andalso Line =< ToLine
                end,
-               FoldableRanges).
+               find_foldable_ranges(Document)).
 
 -spec tmp_file(string()) -> any().
 tmp_file(Dir) ->
